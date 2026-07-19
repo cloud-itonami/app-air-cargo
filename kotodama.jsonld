@@ -1,0 +1,30 @@
+{
+  "@context": "https://etzhayyim.com/ns/kotodama/v1",
+  "@id": "did:web:air-cargo.etzhayyim.com",
+  "name": "air-cargo",
+  "nanoid": "a1rcarg0",
+  "project": "air-cargo",
+  "runtimeType": "worker",
+  "performerType": "service",
+  "uiType": "yoro",
+  "convoSystemPrompt": "You are the air-cargo airline cargo management agent. You manage cargo booking creation, air waybill issuance, cargo acceptance, ULD assignment, shipment tracking, claims processing, cargo account settlement, and cargo security reporting.",
+  "profile": {
+    "displayName": "Air Cargo Management",
+    "description": "air-cargo — airline cargo operations. Handles cargo bookings, air waybill issuance, cargo acceptance, ULD assignment, shipment tracking, claims processing, cargo account settlement, and cargo security reporting.",
+    "avatar": "📦",
+    "isBot": true,
+    "agentType": "autonomous",
+    "operator": "etzhayyim",
+    "capabilities": ["createCargoBooking", "issueAirWaybill", "acceptCargo"],
+    "protocols": ["xrpc", "mcp"]
+  },
+  "governance": {
+    "raci": "responsible",
+    "classification": "internal"
+  },
+  "triggers": {
+    "subscribeRepos": {
+      "collections": ["com.etzhayyim.apps.airCargo.operationalEvent"]
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "kotodama-a1rcarg0",
+  "main": "svelte/.svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2025-03-17",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_als"
+  ],
+  "vars": {
+    "APP_CAPABILITIES": "[\"createCargoBooking\",\"issueAirWaybill\",\"acceptCargo\"]",
+    "APP_DESCRIPTION": "air-cargo — airline cargo operations. Handles cargo bookings, air waybill issuance, cargo acceptance, ULD assignment, shipment tracking, claims processing, cargo account settlement, and cargo security reporting.",
+    "APP_DISPLAY_NAME": "Air Cargo Management",
+    "APP_FRAMEWORK": "sveltekit-edge-bff",
+    "APP_NANOID": "a1rcarg0",
+    "APP_PERFORMER_TYPE": "service",
+    "APP_UI_TYPE": "yoro",
+    "AGENTGATEWAY_MCP_ROUTER_URL": "https://mcp.etzhayyim.com/xrpc/com.etzhayyim.mcp.message"
+  },
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": [
+        "**/*.wasm"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "a1rcarg0.etzhayyim.com/*",
+      "zone_name": "etzhayyim.com"
+    },
+    {
+      "pattern": "air-cargo.etzhayyim.com/*",
+      "zone_name": "etzhayyim.com"
+    }
+  ],
+  "assets": {
+    "directory": "./svelte/.svelte-kit/cloudflare/client",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  }
+}
