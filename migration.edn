@@ -1,1 +1,51 @@
-{:schema "etzhayyim.migration/v1" :source {:repository "etzhayyim/root" :revision "0c30514ab1ac7f929b1c796f2d03594117fae2d7" :path "60-apps/etzhayyim-project-air-cargo" :tree "0c96f688601b182cada66b9270a28259313937f3" :tracked-files 20 :bytes 48042} :destination {:repository "cloud-itonami/app-air-cargo"} :identity {:allowed-additions ["README.edn" "migration.edn" "README.md" "docs/operator-quickstart.md"]}}
+{:schema "etzhayyim.migration/v1"
+ :source {:repository "etzhayyim/root"
+          :revision "0c30514ab1ac7f929b1c796f2d03594117fae2d7"
+          :path "60-apps/etzhayyim-project-air-cargo"
+          :tree "0c96f688601b182cada66b9270a28259313937f3"
+          :tracked-files 20
+          :bytes 48042}
+ :destination {:repository "cloud-itonami/app-air-cargo"}
+ :identity
+ {:allowed-additions ["README.edn" "migration.edn" "README.md"
+                      "docs/operator-quickstart.md"
+                      ;; Added 2026-08-18 by the appview's TypeScript -> ClojureScript
+                      ;; migration (docs/adr/0001). docs/operator-quickstart.md S1 asks
+                      ;; that anything added here be listed, so that the provenance
+                      ;; check reports drift and not bookkeeping.
+                      ".gitignore" "deps.edn" "shadow-cljs.edn"
+                      "docs/adr/0001-migrate-the-appview-from-typescript-to-clojurescript.edn"
+                      "scripts/smoke-worker.cljs" "scripts/verify-docs-claims.cljs"
+                      "src/air_cargo/route.cljc" "src/air_cargo/view.cljc"
+                      "src/air_cargo/worker.cljs" "test/air_cargo/route_test.cljc"]
+
+  ;; Upstream files the migration REMOVED: the deployed SvelteKit appview, the
+  ;; edge dispatcher that no config referenced, and the root package.json whose
+  ;; only content was a typecheck for them. Listed so the provenance walk in
+  ;; docs/operator-quickstart.md S1 can tell "removed on purpose" from "missing";
+  ;; recovery is `git show 9e80d7d:<path>`.
+  :removed-by-migration ["package.json" "src/app.ts"
+                         "svelte/package.json" "svelte/src/app.html"
+                         "svelte/src/routes/+page.svelte"
+                         "svelte/src/routes/xrpc/[...path]/+server.ts"
+                         "svelte/svelte.config.js" "svelte/tsconfig.json"
+                         "svelte/vite.config.ts"]
+
+  ;; Upstream TypeScript the migration deliberately KEPT, byte-identical.
+  ;;
+  ;; `kotoba/` is not the appview. It is a domain library (AT-record registry with
+  ;; a plaintext/E2E split) that the appview never imported and that is in no
+  ;; bundle -- but it is not DEAD by the test that governs this migration: its two
+  ;; pinned dependencies resolve (both commits exist and are ancestors of their
+  ;; default branch, checked over git on 2026-08-18) and its seven tests pass.
+  ;; Deleting it would have been destruction, not migration. Migrating it is a
+  ;; separate decision that needs a cljs face for @etzhayyim/sdk first.
+  ;;
+  ;; The count and the hashes are pinned in scripts/verify-docs-claims.cljs so this
+  ;; set cannot grow, shrink, or drift silently.
+  :kept-not-the-appview {:paths ["kotoba/package.json" "kotoba/src/index.ts"
+                                 "kotoba/src/registry.ts" "kotoba/src/types.ts"
+                                 "kotoba/test/air-cargo.test.ts" "kotoba/tsconfig.json"
+                                 "kotoba/vitest.config.ts"]
+                         :files 7
+                         :bytes 32149}}}

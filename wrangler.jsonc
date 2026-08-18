@@ -1,29 +1,30 @@
 {
   "name": "kotodama-a1rcarg0",
-  "main": "svelte/.svelte-kit/cloudflare/_worker.js",
+  // Compiled from src/air_cargo/worker.cljs by shadow-cljs (:target :esm).
+  // Before the cljs migration this pointed at svelte/.svelte-kit/cloudflare/_worker.js
+  // -- a build output absent from the tree -- while src/app.ts, the file that read
+  // like the application, was referenced by no config at all. See docs/adr/0001.
+  "main": "dist/worker.js",
   "compatibility_date": "2025-03-17",
-  "compatibility_flags": [
-    "nodejs_compat",
-    "nodejs_als"
-  ],
+  // nodejs_compat / nodejs_als are GONE. They were @sveltejs/adapter-cloudflare's
+  // requirement; the :esm bundle reaches for no node builtin. Removed only after
+  // running the built bundle under workerd (`wrangler dev --local`) with the flags
+  // already absent and hitting every route -- see docs/operator-quickstart.md S5.
+  //
+  // The "rules" CompiledWasm block is gone too: it globbed **/*.wasm in a tree with
+  // zero .wasm files. The "assets" block is gone because the directory it served
+  // (./svelte/.svelte-kit/cloudflare/client) no longer exists -- and never existed
+  // in the tree, only in a build output.
   "vars": {
     "APP_CAPABILITIES": "[\"createCargoBooking\",\"issueAirWaybill\",\"acceptCargo\"]",
     "APP_DESCRIPTION": "air-cargo — airline cargo operations. Handles cargo bookings, air waybill issuance, cargo acceptance, ULD assignment, shipment tracking, claims processing, cargo account settlement, and cargo security reporting.",
     "APP_DISPLAY_NAME": "Air Cargo Management",
-    "APP_FRAMEWORK": "sveltekit-edge-bff",
+    "APP_FRAMEWORK": "cljs-esm-worker",
     "APP_NANOID": "a1rcarg0",
     "APP_PERFORMER_TYPE": "service",
     "APP_UI_TYPE": "yoro",
     "AGENTGATEWAY_MCP_ROUTER_URL": "https://mcp.etzhayyim.com/xrpc/com.etzhayyim.mcp.message"
   },
-  "rules": [
-    {
-      "type": "CompiledWasm",
-      "globs": [
-        "**/*.wasm"
-      ]
-    }
-  ],
   "routes": [
     {
       "pattern": "a1rcarg0.etzhayyim.com/*",
@@ -33,11 +34,5 @@
       "pattern": "air-cargo.etzhayyim.com/*",
       "zone_name": "etzhayyim.com"
     }
-  ],
-  "assets": {
-    "directory": "./svelte/.svelte-kit/cloudflare/client",
-    "binding": "ASSETS",
-    "html_handling": "auto-trailing-slash",
-    "not_found_handling": "none"
-  }
+  ]
 }
