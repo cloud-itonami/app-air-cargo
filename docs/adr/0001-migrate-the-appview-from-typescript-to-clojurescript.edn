@@ -1,0 +1,213 @@
+[{:db/id -1
+  :adr/id "app-air-cargo-0001"
+  :adr/title "appview を TypeScript/Svelte から ClojureScript へ移す"
+  :adr/status "accepted"
+  :adr/date "2026-08-18"
+  :adr/doc_type "adr"
+  :adr/source-format "edn"
+  :adr/body "
+# ADR-0001: appview を TypeScript/Svelte から ClojureScript へ移す
+
+**Status**: accepted / **Date**: 2026-08-18 / **Deciders**: Jun Kawasaki
+
+## Context
+
+この repo は etzhayyim/root の 60-apps/etzhayyim-project-air-cargo から
+2026-07-20 に verbatim 抽出された 20 ファイルで、2026-08-16 の監査
+(README.md / docs/operator-quickstart.md の前版) が測って次を記録していた:
+
+1. **三つの実装があり、deploy されるのは一つだけ**。wrangler.jsonc の main は
+   svelte/.svelte-kit/cloudflare/_worker.js を指す。ビルドした closure 42 ファイル
+   を探索した結果、SvelteKit BFF の 4 シンボルは全部在り、src/app.ts の 9 シンボルと
+   kotoba/ の 5 シンボルは全部無かった。
+2. **読み手が最初に開くファイルはどの config からも参照されていない**。
+   src/app.ts は tree の中の何からも import / 参照されない (再測 2026-08-18:
+   git grep の唯一のヒットは kotoba/test が kotoba/src/index.ts を指すもので、
+   root の src/app.ts ではない)。root の package.json は typecheck: tsc --noEmit を
+   持つが root tsconfig.json が無い。
+3. **公開ページが隣の config と矛盾する**。+page.svelte は routeCount: 0 /
+   routes: [] / vars: [] を literal で持ち、同じディレクトリの wrangler.jsonc は
+   route 2 / var 8 / capability 3 を宣言していた。自分の path も抽出前の
+   60-apps/... と名乗っていた。
+4. **呼び先が一つも解決しない**。air-cargo / a1rcarg0 / dispatcher / mcp の
+   4 ホスト × 3 リゾルバ = 12 とも NXDOMAIN (再測 2026-08-18)。zone 自体は健全
+   (etzhayyim.com は Cloudflare NS で 200)。
+
+この workspace の正本言語は cljs と kotoba であって TypeScript ではない
+(superproject CLAUDE.md の runtime 順序: kotoba wasm > clojurewasm >
+ClojureScript > nbb)。三つの実装のうちどれを選んでも TypeScript には着地する。
+
+## Decision
+
+**appview を ClojureScript に移し、TypeScript と Svelte を撤去する。**
+
+    src/air_cargo/route.cljc    判断 (どの handler が答えるか)
+    src/air_cargo/view.cljc     ページ (jp-go-dds の hiccup)
+    src/air_cargo/worker.cljs   Request/Response に触る唯一の層
+            ↓ shadow-cljs :target :esm
+    dist/worker.js              wrangler.jsonc の main が指すもの
+
+先例は同じ org の cloud-itonami/app-lo と cloud-itonami/app-ongakuka、および
+cloud-itonami-marketplace-listing。入口を .kotoba ではなく cljs に置くのは
+ADR-2606290000 の判断で、kotoba の ingress capability が :native-aot /
+:wasm-aot とも pending だからである。判断を .cljc に切り出してあるのは、
+ブラウザもビルドも無しにテストするためであり、ingress が qualify した時に
+最初に .kotoba へ移る部分だからでもある。
+
+### これで消えた欠陥
+
+- (1)(2) は構造的に消えた。main が指す bundle は src/ からコンパイルされる。
+  検証器が shadow の :output-dir と wrangler の main と export の ns 名の
+  三つが噛み合っていることを検査し、噛み合わなくなれば落ちる。
+- (3) も構造的に消えた。ページは route 表・APP_CAPABILITIES・env のキーを
+  **引数で受け取って**描く。表示と実際に答えるものが同じ一つの値から出る。
+- (4) は移行では直らない。ホストは相変わらず NXDOMAIN である。
+
+### ビルドが緑であることは検査ではない
+
+shadow は未宣言 / 改名された var を **warning** として扱い、
+`shadow-cljs release worker` は exit 0 のまま初回リクエストで throw する bundle を
+書き出す。したがって『ビルドが通った』は落ちようのない検査である。
+shadow-cljs.edn の :compiler-options に :warnings-as-errors true を入れた。
+
+**:build-options ではない** —— shadow が読むのは
+[:compiler-options :warnings-as-errors] (shadow/build/compiler.clj の
+should-warning-throw?) で、:build-options に置くと黙って無視される。それは
+この option が防ごうとしている失敗そのもの (落ちようのない修正) なので、
+scripts/verify-docs-claims.cljs はこのファイルを **EDN として読んで key の
+path を検査する**。grep では shadow-cljs.edn の中のこの説明コメント自身に
+一致してしまう。
+
+### 多段パスの扱いは変えない
+
+deploy されていた SvelteKit の route は rest parameter [...path] で受けており、
+/xrpc/a/b を nsid \"a/b\" としてそのまま上流へ渡していた。空文字だけが 400
+(Missing XRPC method) である。**ここを 1 セグメントに絞るのは移行ではなく
+方針変更**なので、移行の commit には入れない。絞りたいなら別の決定として記録する。
+同型の移行 (app-lo / app-ongakuka) で先に正しく行われた判断に合わせた。
+
+### 持ち越さなかったもの (黙って消していない)
+
+- **src/app.ts の dispatcher 経路** (8 メソッドを dispatcher.etzhayyim.com へ POST)。
+  宛先が NXDOMAIN であり、それが使う DISPATCHER_URL /
+  DISPATCHER_INTERNAL_SECRET は **wrangler.jsonc に binding が無い**。
+  動かない経路を移植して『移行済み』と言わないため、移していない。
+- **/_app/meta** (src/app.ts の /health の別名)。/health を持ち越したので別名は
+  落とした。テストと smoke が 404 であることを固定している。
+- **/health の bpmn フィールド** (etzhayyim-root/00-contracts/bpmn/... を指していた)。
+  その upstream path は現存しない。
+
+### kotoba/ は撤去しなかった (この移行で最も重い判断)
+
+kotoba/src/{types,registry,index}.ts (625 行) と kotoba/test/air-cargo.test.ts は、
+AT record の plaintext/E2E 分割を持つドメインライブラリである。appview はこれを
+import しておらず、deploy される bundle にも入っていない。
+
+**初版の私はこれを撤去した。それは誤りで、撤去を取り消した。**「TypeScript を
+全部消す」は拡張子による判断であって測定による判断ではない。この移行を支配する
+テスト (下記「持ち越さなかった経路」と同じテスト) を kotoba/ に当てると、
+**死んでいない**:
+
+| 問い | 測定 (2026-08-18) |
+|---|---|
+| deploy される bundle に入っているか | いいえ。dist/worker.js に対する 5 probe シンボルがすべて 0 件 (対照は非 0) |
+| 依存は解決するか | はい。@etzhayyim/sdk の 12314a0c と sdk-mock の c857ff9b はどちらも存在し既定ブランチの祖先。gh api は両方に 404 を返すが git ls-remote と merge-base --is-ancestor は通る (前版の監査が記録した『API が無いと言ったら、実際にそれを serve するプロトコルで確かめる』がそのまま効いた) |
+| テストは通るか | はい。7 tests / 7 passed |
+
+「bundle に無い」ことは「死んでいる」ことではない。**appview の移行が置き換える
+対象でもない。** 消すのは移行ではなく破壊である。
+
+**代わりに固定した。** scripts/verify-docs-claims.cljs が kotoba/ を
+**7 ファイル / 32,149 バイト / 各ファイルの sha256** で pin する。この集合は黙って
+増えも減りも変わりもしない —— appview の TypeScript が『ライブラリのファイル』の
+顔をして戻ってくる経路もこれで塞がる。三方向とも実際に落として確認した
+(kotoba/ に .ts を足す / 既存を編集する / 1 つ消す)。
+
+cljs へ移すかどうかは別の決定であり、この移行はそれを先取りしていない。移すには
+@etzhayyim/sdk の cljs face が先に要る。
+
+### UI
+
+基盤は jp-go-digital-design-system (skill kotoba-uiux が定める新規 UI の base)。
+色・寸法は --hig-* トークン契約のみ、app 固有 CSS は 3 行。CSS は
+shadow.resource/inline で bundle に焼く (design system の外部リクエストゼロ方針)。
+
+**採点は design system の有無を証明しない。** design-quality の CLI で
+100.00 / 100 (gate 95) だが、同じページを CSS を一切渡さずに描いても
+**96.63 で --min 95 を通る** (2026-08-18 実測)。さらに、クラス名 dads-table を
+探すだけでも証明にならない —— それは view が出す markup の中にあり、CSS が
+1 バイトも無いページにも 9 回現れる (実測)。参照実装の smoke はここを
+クラス名だけで見ていた。この repo の smoke は二つに分け、
+**dds.css の中だけに在るトークン --color-primitive-blue** (CSS 抜きページでの
+出現回数 0、実測) を見る。
+
+## 検証 (この ADR を書いた時点で実際に通したもの)
+
+docs/operator-quickstart.md に各コマンドとその実出力がある。
+
+- **air-cargo.route-test**: 7 tests / 49 assertions、0 failures。west checkout の
+  classpath と、deps.edn が pin した sha の抽出の**両方**で実行し、結果は同一。
+- **ページ描画 → design-quality score 100.00**、gate PASS (exit 0)。
+- **scripts/verify-docs-claims.cljs**: 31 claim すべて PASS、exit 0。
+- **shadow-cljs release worker** が :warnings-as-errors 有効のまま完走
+  (55 files, 12 compiled, 0 warnings, 16.60s、dist/worker.js 254,613 バイト)。
+- **scripts/smoke-worker.cljs** がその bundle を import して叩き、33 項目すべて PASS。
+- **workerd (wrangler dev --local)** で compatibility_flags 無しのまま全 route が
+  答えた。compat flag の撤去はこの実測の後に行った (憶測ではない)。
+- **kotoba/ の 7 テスト**を実際に走らせ 7 passed (撤去しない判断の根拠)。
+
+### すべての gate を、緑を受け取る前に赤くして見せた
+
+| # | 壊したもの | 赤くなったもの |
+|---|---|---|
+| M1 | /xrpc/a/b を 400 にする (移行の衣を着た方針変更) | route-test: 1 failure (dispatch-xrpc) |
+| M2 | ページが route 表でなく固定値を描く | route-test: 4 failures (page 系 2 テスト) |
+| M4 | app CSS を raw hex + 11px にする | **何も赤くならない** —— 採点は 100.00 のまま。CLI が contrast / input-zoom を採点対象に入れていないため。これは実演ではなく採点の限界の測定である |
+| M5 | 採点対象ページの safe-area と viewport を壊す | design-quality: 74.16 で FAIL、exit 1 |
+| B1 | 未宣言の var (route/dispatchh) を呼ぶ、:warnings-as-errors 有効 | **build 失敗 (rc=1)** |
+| B2 | 同じ壊れたソース + :warnings-as-errors を :build-options へ移す | **build 成功 (rc=0)** —— これが defect の実演。文字列はファイルに残っている (grep は 1 件見つける) のに検査が消える |
+| B3 | ページに env の VALUE を渡す (keys → vals) | build は成功、**smoke が 3 項目で赤** (KEY が出ない / VALUE が出る / env を列挙していない) |
+| V1 | 撤去したパスに .ts が戻る | removed-by-migration-absent / appview-ts-files / tracked-files |
+| V2 | 別名の .ts が入る | appview-ts-files / every-added-file-is-registered / tracked-files (removed-by-migration-absent は当たらない —— だから claim を分けてある) |
+| V3 | :warnings-as-errors を :build-options へ移す | warnings-are-errors / warnings-as-errors-not-misplaced (grep なら通っていた) |
+| V4 | wrangler の main を build 出力以外に向ける | wrangler-main / wrangler-main-is-the-shadow-output |
+| V5 | nodejs_compat / nodejs_als が戻る | no-node-compat-flags |
+| V6 | 継承ファイルを編集する | inherited-bytes / preserved-files-unchanged |
+| V7 | view が固定値を描く | page-renders-the-data |
+| V8 | provenance に無いファイルが増える | every-added-file-is-registered / tracked-files |
+| V9 | migration.edn が読めない EDN になる | **UNDETERMINED で exit 2** (0 とも 1 とも別) |
+| K1 | kotoba/ に .ts を足す | kept-files / every-added-file-is-registered / tracked-files |
+| K2 | kotoba/ の既存ファイルを編集する | kept-bytes / kept-files-unchanged |
+| K3 | kotoba/ のファイルを消す | kept-files / kept-bytes / kept-files-unchanged / tracked-files |
+| smoke | bundle が無い | UNDETERMINED で exit 2 |
+
+**外した mutation も記録する。** view を『env の値を出す』ように壊しても
+route-test は緑のままだった。これは検査の欠陥ではなく mutation の狙いが外れて
+いる —— view は :vars として**キーしか受け取らない**ので、値の露出は構造的に
+view の外にある。狙いを bundle へ付け替えたのが B3 で、そちらは正しく赤くなった。
+**緑だった mutation を実演として数えない。**
+
+### 検査が『落ちない』ことを見つけて直した
+
+smoke の初版は『design system が焼かれている』を **クラス名 dads-table** で
+見ていた (参照実装から引き継いだ形)。**この検査は落ちない** —— dads-table は
+view が出す markup の中にあり、CSS を 1 バイトも渡さずに描いたページにも
+9 回現れる (実測)。二つに分け、component の使用 (class="dads-table") と
+**dds.css の中だけに在るトークン --color-primitive-blue** (CSS 抜きページでの
+出現回数 0) を別々に見る形に直した。
+
+## Consequences
+
+- appview の TypeScript は 0 本、正本言語 (.cljs/.cljc) が 3 本になった
+  (同じ範囲で数えて移行前は 3 対 0、加えて .svelte が 1 本)。kotoba/ の
+  7 ファイルはこの数に入らない —— appview ではないので別に数え、7 ファイル /
+  32,149 バイト / 各ファイルの sha256 で pin してある。
+  この二つは検証器の claim なので、TS が戻れば落ちる —— 撤去した 9 パスに
+  戻る場合と別名で入る場合を別々の claim が捕まえる。
+- 継承した 4 ファイル (3,970 バイト) は 1 バイトも変わっていない (sha256 を
+  検証器に固定)。wrangler.jsonc と migration.edn だけは意図的に変更した
+  (main の付け替え、assets / rules / compatibility_flags の撤去、
+  APP_FRAMEWORK の更新、provenance 台帳への追記) ので、内容で検査する。
+- ホストは相変わらず NXDOMAIN である。移行はそれを直さない。deploy するか
+  retire するかは別の決定であり、この移行はそれを先取りしていない。
+"}]

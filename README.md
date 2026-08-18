@@ -1,114 +1,200 @@
 # app-air-cargo
 
-**A verbatim extraction of an air-cargo app that was never wired to anything.**
-Twenty files copied out of `etzhayyim/root` on 2026-07-20, carrying three
-separate implementations of "air cargo" — an edge dispatcher, a SvelteKit BFF,
-and a kotoba domain registry. **Only one of the three is in the deployed
-bundle**, and every hostname any of them talks to is **NXDOMAIN**.
+**航空貨物（air cargo）のオペレーションを扱う appview の公開面。** 予約・AWB
+発行・貨物受託・ULD 割当・追跡・求償・精算・保安報告 —— 業務そのものは MCP
+router の先（AgentGateway / pod 側 LangServer）にあり、**ここには無い**。この
+repo が持つのは薄い edge であって、実装ではない。
 
-The code is not broken. The tests pass and they genuinely discriminate. What is
-missing is everything the code points at.
+`etzhayyim/root` の `60-apps/etzhayyim-project-air-cargo` からの抽出物で、
+**2026-08-18 に TypeScript/Svelte から ClojureScript へ移行した**（ADR-0001）。
+数字はすべて `scripts/verify-docs-claims.cljs` が tree から再計算して検査する。
 
-Read this file before `MIGRATION-TODO.md`, which describes a remediation plan
-for a deployment that does not exist.
+## deploy されるものは、いま読んでいるソースである
 
-## What is true now
+```
+src/air_cargo/route.cljc    判断（どの handler が答えるか）  ← 純 .cljc、テスト対象
+src/air_cargo/view.cljc     ページ（jp-go-dds の hiccup）    ← 純 .cljc、テスト対象
+src/air_cargo/worker.cljs   Request/Response に触る唯一の層
+        ↓ shadow-cljs :target :esm
+dist/worker.js              ← wrangler.jsonc の "main" が指すもの
+```
 
-Measured 2026-08-16. Every row is reproducible from
-[`docs/operator-quickstart.md`](docs/operator-quickstart.md).
+移行前は `main` が `svelte/.svelte-kit/cloudflare/_worker.js`（tree に存在しない
+ビルド出力）を指し、読み手が最初に開く `src/app.ts` は **どの config からも
+参照されていなかった**。`scripts/verify-docs-claims.cljs` が
+**shadow の出力先と wrangler の `main` と export の ns 名の 3 つが噛み合って
+いること**を検査し、噛み合わなくなれば落ちる。
 
-| What this repo asserts | What is true now |
-|---|---|
-| `wrangler.jsonc` serves `air-cargo.etzhayyim.com/*` and `a1rcarg0.etzhayyim.com/*` | Both are **NXDOMAIN** on 1.1.1.1, 8.8.8.8 and 9.9.9.9. The zone is healthy — `etzhayyim.com` apex answers `200` from Cloudflare NS — so these are missing labels, not an outage. |
-| `src/app.ts` proxies to `dispatcher.etzhayyim.com` | **NXDOMAIN.** |
-| `svelte/…/xrpc/[...path]/+server.ts` proxies to `mcp.etzhayyim.com` | **NXDOMAIN.** Both upstreams are gone, so no request path in this repo can complete even if it were deployed. |
-| `kotodama.jsonld` declares the actor `did:web:air-cargo.etzhayyim.com` | Unresolvable. `did:web` resolution requires `https://air-cargo.etzhayyim.com/.well-known/did.json`; the host does not resolve. |
-| `MIGRATION-TODO.md`: seed awaiting a Charter §2(a) codemod | The scan recorded in that same file found **none** of the patterns it was written to remove. The blocker was never the codemod. |
-| `svelte/src/routes/+page.svelte` reports `routeCount: 0`, no routes, no vars | `wrangler.jsonc` in the same repo declares **2 routes and 8 vars**. The landing page is a generator artifact that never read the config next to it, and still names its own path as `60-apps/etzhayyim-project-air-cargo/…` — the location it was extracted out of. |
-| Upstream `etzhayyim/root@main:60-apps/etzhayyim-project-air-cargo` | Gone. `60-apps` on `origin/main` now holds exactly one entry, `etzhayyim-project-organism`. |
+判断を `.cljc` に置いてあるのは、ブラウザもビルドも無しにテストするためであり、
+ingress capability が qualify した時に **最初に `.kotoba` へ移る部分**だからで
+ある（入口を当面 cljs に置くのは ADR-2606290000 の判断）。
 
-## Three implementations, one deployed
+## 公開ルート
 
-`wrangler.jsonc` sets `main` to `svelte/.svelte-kit/cloudflare/_worker.js`. That
-is the whole deploy. Building it and searching the **entire** resulting closure
-(42 files — the `cloudflare/` output plus `output/server/**`, which `_worker.js`
-imports across directory boundaries) finds:
-
-| Implementation | Size | In the deployed bundle? |
+| METHOD | PATH | 何をするか |
 |---|---|---|
-| `svelte/` — SvelteKit BFF, forwards XRPC to the MCP router | 2.4 kB endpoint | **Yes.** All four probe symbols present. |
-| `src/app.ts` — edge dispatcher, 8 methods, `/health` + `/_app/meta` | 76 lines | **No.** All nine probe symbols absent. |
-| `kotoba/src/**` — the actual domain model (AT-record registry, E2E envelopes) | 625 lines | **No.** All five probe symbols absent. |
+| GET | `/` | この appview の説明ページ |
+| GET | `/health` | 生存確認。deploy された面が答えることを外から確かめられる |
+| POST | `/xrpc/:nsid` | XRPC を MCP router へ中継する |
+| OPTIONS | `/xrpc/*` | CORS preflight |
 
-`kotoba/` is where the real work is — a plaintext/E2E split with shipment and
-ULD anchors in the clear and AWB parties, claims and screening results sealed
-via `encryptedWrite`. It is a library no deployed code imports.
+**この表の出所は `air-cargo.route/routes` で、ページもそこから描く。** 移行前の
+ページは `routeCount: 0` / `routes: []` / `vars: []` を literal で持っており、
+隣の `wrangler.jsonc` が route 2・var 8・capability 3 を宣言していることに
+気づけなかった。いまは route 表も capability も env のキーも渡す側が持ち、
+ページは描くだけなので、両者がずれる余地が無い。
 
-## Four method vocabularies, none of which agree
+`/xrpc/a/b` のような多段パスは **400 にしない**。deploy されていた SvelteKit の
+route は rest parameter `[...path]` で受けており、`a/b` をそのまま tool 名として
+転送していた。空だけが 400（`Missing XRPC method`、文言も当時のまま）。ここを
+1 セグメントに絞るのは移行ではなく方針変更なので、この commit には入れていない。
 
-| Source | Count | Names |
-|---|---|---|
-| `kotodama.jsonld` `capabilities` | 3 | `createCargoBooking`, `issueAirWaybill`, `acceptCargo` |
-| `wrangler.jsonc` `APP_CAPABILITIES` | 3 | identical to the above |
-| `src/app.ts` `methods` | 8 | adds `assignUld`, `trackShipment`, `processClaim`, `settleCargoAccount`, `reportCargoSecurity` |
-| `kotoba/src/index.ts` exports | 11 | `registerShipment`, `getShipment`, `listShipments`, `listUldAssignments`, `getAwbParties`, `fileCargoClaim`, `coverage`, … |
+## いま在るもの — 25 ファイル
 
-Exactly **one** declared capability — `issueAirWaybill` — has an implementation.
-`createCargoBooking` and `acceptCargo`, two of the three capabilities this actor
-advertises to the network, **exist nowhere in the repository as code**. The
-kotoba equivalent of "create a booking" is called `registerShipment`, and
-nothing maps one name onto the other.
-
-`settleCargoAccount` is advertised by `src/app.ts` but `kotoba/src/types.ts`
-states it is deliberately *not* modelled here — IATA CASS fiat settlement stays
-etzhayyim-side under consent-capability. That one is a documented exclusion, not
-a gap.
-
-## Provenance: intact, verified byte-for-byte
-
-`migration.edn` declares the extraction, and all four claims hold (2026-08-16):
-
-- declared tree `0c96f688…` **is** the real upstream tree for
-  `60-apps/etzhayyim-project-air-cargo` at `0c30514a…`
-- declared `:tracked-files 20` — actual 20
-- declared `:bytes 48042` — actual 48042
-- **20 of 20 blobs are byte-identical** to upstream (0 differ, 0 missing)
-
-The only files beyond the upstream tree are the ones `:allowed-additions`
-permits. The extraction was done correctly; what it extracted was already
-disconnected. The source commit's own message is
-`refactor(apps): extract nineteen-file band (#3256)`.
-
-The two SDK dependencies (`@etzhayyim/sdk`, `@etzhayyim/sdk-mock`) are pinned to
-commits that **still exist and are ancestors of their `main`** — the pins are
-healthy, not dangling.
-
-## The tests are real
-
-`kotoba/test/air-cargo.test.ts` — **7 tests, 7 passing**, and they discriminate.
-Three mutations, each caught by exactly the test that should catch it:
-
-| Mutation | Result |
+| 面 | ファイル |
 |---|---|
-| remove the `shipmentExists` FK check in `assignUld` | 1 failed — `FK: uldAssignment requires an existing shipment` |
-| make `isDecimalString` accept any string | 3 failed — shipment, AWB, and claim/screening suites |
-| let `isUint` accept negatives | 1 failed — the shipment validation suite |
+| 判断・描画・edge | `src/air_cargo/{route.cljc, view.cljc, worker.cljs}` |
+| テスト | `test/air_cargo/route_test.cljc`（7 tests / 49 assertions） |
+| ビルド | `deps.edn` / `shadow-cljs.edn` / `.gitignore` |
+| Worker 設定 | `wrangler.jsonc` |
+| actor 記述子 | `kotodama.jsonld` |
+| 検証 | `scripts/{smoke-worker.cljs, verify-docs-claims.cljs}` |
+| ドメインライブラリ（appview ではない） | `kotoba/`（7 ファイル・TypeScript。下記） |
+| 由来・権利・識別 | `NOTICE` / `README.edn` / `migration.edn` / `MIGRATION-TODO.md` |
+| 文書 | `README.md` / `docs/operator-quickstart.md` / `docs/adr/0001-*.edn` |
 
-Restoring each returns 7/7. Running them takes a workaround on current npm; see
-quickstart §4.
+**appview の TypeScript は 0 本、正本言語（`.cljs`/`.cljc`）が 3 本。**
+移行前は **3 対 0**（`src/app.ts` / `svelte/…/+server.ts` / `svelte/vite.config.ts`）
+＋ `.svelte` 1 本だった。同じ範囲で数えている（`scripts/` `test/` `kotoba/` は除く）。
+この数は検証器の claim なので、
+appview の TS が戻れば落ちる —— 撤去した 9 パスに戻る場合
+（`removed-by-migration-absent`）も、別名で入る場合（`appview-ts-files`）も、
+別々の claim が捕まえる。
 
-## What to do with it
+**`kotoba/` の 7 ファイルはこの数に入らない。** appview ではないので別に数え、
+**7 ファイル / 32,149 バイト / 各ファイルの sha256** を検証器に固定してある
+（下記）。
 
-An owner decision, not something a maintenance pass should take unilaterally:
+## 何を撤去したか（239 行の TypeScript / Svelte）
 
-1. **Retire it.** Nothing points at these hostnames, both upstreams are gone,
-   and the deployed third of the repo only forwards to a dead router.
-2. **Revive `kotoba/`.** It is the only part with tested domain logic, it has no
-   runtime dependency on the dead hosts, and it is 625 lines. If air-cargo
-   capability is wanted anywhere, this is the piece worth moving — not the two
-   proxies.
-3. **Leave it.** Costs nothing, but keeps a repo that reads as a live edge app
-   to anyone who opens `src/app.ts` first — the one file guaranteed not to run.
+移行前の tree は 24 ファイル。**撤去したのは 9 ファイル・239 行 —— appview だけ**
+である。
 
-Whichever is chosen, the capability declaration should stop advertising
-`createCargoBooking` and `acceptCargo` until something implements them.
+| 撤去したもの | 行 | なぜ |
+|---|---|---|
+| `svelte/`（7 ファイル） | 151 | deploy されていた appview。cljs へ移した |
+| `src/app.ts` | 76 | 同じ appview のもう一つの実装。**どの bundle にも入っておらず**（9 シンボルすべて不在）、**どの config からも参照されていなかった** |
+| `package.json`（root） | 12 | `typecheck: tsc --noEmit` を持つが root `tsconfig.json` が無く、何も検査していなかった。`kotoba/` は自前の `package.json` / `tsconfig.json` / `vitest.config.ts` を持つので影響を受けない |
+
+撤去した 9 パスは `migration.edn` の `:identity :removed-by-migration` に名前で
+登録してある。**失われていない** —— この移行の親 commit `9e80d7d` に byte 単位で
+在り、`git show 9e80d7d:src/app.ts` で取り出せる。
+
+## 何を撤去しなかったか — `kotoba/`（appview ではない）
+
+`kotoba/src/{types,registry,index}.ts`（625 行）は AT record の plaintext / E2E
+分割を持つドメインライブラリで、`kotoba/test/air-cargo.test.ts` が付いている。
+**appview はこれを import していない。deploy される bundle にも入っていない。**
+それでも **撤去していない** —— 「bundle に無い」ことは「死んでいる」ことでは
+ないからである。2026-08-18 に測った:
+
+| 問い | 測定 |
+|---|---|
+| deploy される bundle に入っているか | **いいえ。** `dist/worker.js` に対する 5 つの probe シンボル（`registerShipment` / `assignUld` / `encryptedWrite` / `airCargo.shipment` / `AIR_CARGO_DID_PREFIX`）がすべて 0 件。対照（`com.etzhayyim.apps.airCargo.` / `MCP router unreachable` / `dads-table`）は非 0 |
+| 依存は解決するか | **はい。** `@etzhayyim/sdk` の `12314a0c` と `@etzhayyim/sdk-mock` の `c857ff9b` は**どちらも存在し、それぞれの既定ブランチの祖先**（git で直接確認。`gh api` は両方に 404 を返すが、それは API 経路の話で、`git ls-remote` と `merge-base --is-ancestor` は通る） |
+| テストは通るか | **はい。7 tests / 7 passed**（2026-08-18 に実行。手順は `docs/operator-quickstart.md` §6） |
+
+つまり **appview の移行が置き換える対象ではなく、死んでもいない。** ここを消すのは
+移行ではなく破壊である。
+
+**代わりに固定した。** 検証器が `kotoba/` を **7 ファイル / 32,149 バイト /
+各ファイルの sha256** で pin しているので、この集合は黙って増えも減りも変わりも
+しない —— appview の TypeScript が「ライブラリのファイル」の顔をして戻ってくる
+経路も、これで塞がっている。
+
+**cljs へ移すかどうかは別の決定であり、この移行はそれを先取りしていない。**
+移すには `@etzhayyim/sdk` の cljs face が先に要る。
+
+### 持ち越さなかった経路（黙って消していない）
+
+- **`src/app.ts` の dispatcher 経路**（8 メソッドを `dispatcher.etzhayyim.com` へ
+  POST）。宛先が NXDOMAIN であり、使う `DISPATCHER_URL` /
+  `DISPATCHER_INTERNAL_SECRET` は **`wrangler.jsonc` に binding が無い**。
+- **`/_app/meta`**（`src/app.ts` の `/health` の別名）。`/health` を持ち越したので
+  別名は落とした。テストと smoke が 404 であることを固定している。
+- **`/health` の `bpmn` フィールド**（`etzhayyim-root/00-contracts/bpmn/…` を
+  指していた。その path は現存しない）。
+
+## 呼び先が 1 つも解決しない（移行では直らない）
+
+2026-08-18 実測、1.1.1.1 / 8.8.8.8 / 9.9.9.9 の 3 リゾルバすべてで:
+
+| ホスト | 役割 | DNS |
+|---|---|---|
+| `air-cargo.etzhayyim.com` | 公開ホスト（wrangler の route） | **NXDOMAIN** |
+| `a1rcarg0.etzhayyim.com` | 同（nanoid 側） | **NXDOMAIN** |
+| `mcp.etzhayyim.com` | `/xrpc/:nsid` の中継先 | **NXDOMAIN** |
+| `dispatcher.etzhayyim.com` | 撤去した `src/app.ts` の中継先 | **NXDOMAIN** |
+
+zone 自体は健全（`etzhayyim.com` は Cloudflare NS で apex が 200）なので、
+これは 4 つの label が無いのであってドメインが死んでいるのではない。
+`did:web:air-cargo.etzhayyim.com` も同じ理由で解決しない。
+
+deploy 先も中継先も、いま存在しない。`/xrpc/` は到達できなければ **502 を返す**
+——成功と同じ形で隠さない。**移行はこれを直さない。**
+
+## 宣言と実装は今も一致していない（移行では直らない）
+
+`kotodama.jsonld` と `wrangler.jsonc` が宣言する capability は 3 つ
+（`createCargoBooking` / `issueAirWaybill` / `acceptCargo`）。**appview に
+その実装は無い** ——実装は MCP router の先にある、という構成だからである。
+`kotoba/` が持つのは `registerShipment` 等の別語彙で、宣言された 3 つのうち
+`issueAirWaybill` 1 つだけが対応する。ページはこの 3 つを「宣言」として描き、
+**許可リストとしては描かない**（中継は prefix を検査しない）。**移行はこの
+不一致を直さない**（直すのは語彙を揃える別の決定である）。
+
+## UI
+
+基盤は `kotoba-lang/jp-go-digital-design-system`（デジタル庁デザインシステム）。
+色・寸法は `--hig-*` トークン契約だけで書き、raw hex も px フォントサイズも
+置かない。app 固有 CSS は 3 行。CSS は外部リクエストゼロの方針どおり
+`shadow.resource/inline` で bundle に焼く。
+
+決定論的 audit（`kotoba-lang/design-quality`）で **100.00 / 100（gate 95）**。
+
+**ただし、この点数は design system が在ることを証明しない。** 2026-08-18 に実測:
+
+- 同じページを **CSS を一切渡さずに**描いても **96.63** で `--min 95` を通る
+- app CSS を raw hex + `11px` に書き換えても **100.00** のまま
+  （CLI は `contrast` と `input-zoom` の 2 軸を採点対象に入れていない）
+- クラス名 `dads-table` を探すのも証明にならない —— それは view が出す markup の
+  中にあり、**CSS が 1 バイトも無いページにも 9 回現れる**
+
+だから「design system が在る」は採点ではなく **smoke が持つ**。
+`scripts/smoke-worker.cljs` は `class="dads-table"`（component を使っている）と
+`--color-primitive-blue`（**dds.css の中だけに在るトークン**、CSS 抜きページでの
+出現回数 0）を別々に見る。採点が落ちることも確かめてある（safe-area と viewport
+を壊すと 74.16 で FAIL、exit 1）。
+
+## 検証
+
+```bash
+nbb scripts/verify-docs-claims.cljs .          # <dir> は先頭に置く
+```
+
+exit 0 = 全一致 / 1 = 食い違い / **2 = 判定できなかった**（0 と区別する）。
+31 の claim を評価し、**20 未満しか評価できなかった場合は exit 2** で終わる
+（沈黙を緑として数えないため）。テスト・ビルド・smoke は
+`docs/operator-quickstart.md`。
+
+## 残っている欠陥（移行では直っていない）
+
+1. **4 ホストとも NXDOMAIN。** deploy するか retire するかは owner の決定。
+2. **宣言された 3 capability のうち 2 つ（`createCargoBooking` / `acceptCargo`）は
+   実装がこの repo のどこにも無い**。残る `issueAirWaybill` は `kotoba/` に在るが、
+   appview からは到達しない（上記）。
+3. **`MIGRATION-TODO.md` のチェックボックス 7 件が未チェック**のまま。憲章適合の
+   手動レビューは未実施であると文書自身が書いている。このファイルは upstream から
+   byte 単位で変えていない。
+4. **`kotoba/` は TypeScript のまま**（意図的。上記）。cljs へ移すには
+   `@etzhayyim/sdk` の cljs face が要る。
