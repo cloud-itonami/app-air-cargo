@@ -21,7 +21,7 @@
 (def root (or (first (remove #(str/starts-with? % "--") *command-line-args*)) "."))
 
 (def claims
-  {:tracked-files 25
+  {:tracked-files 26
    :inherited-bytes 3970           ; the 4 inherited files still carried unchanged
    :appview-ts-files 0             ; TypeScript OUTSIDE kotoba/ -- see kept below
    :appview-svelte-files 0
