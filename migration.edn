@@ -7,7 +7,7 @@
           :bytes 48042}
  :destination {:repository "cloud-itonami/app-air-cargo"}
  :identity
- {:allowed-additions ["README.edn" "migration.edn" "README.md"
+ {:allowed-additions ["README.edn" "migration.edn" "nbb.edn" "README.md"
                       "docs/operator-quickstart.md"
                       ;; Added 2026-08-18 by the appview's TypeScript -> ClojureScript
                       ;; migration (docs/adr/0001). docs/operator-quickstart.md S1 asks
