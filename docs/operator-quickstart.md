@@ -41,7 +41,7 @@ K=~/github/com-junkawasaki/orgs/kotoba-lang
 ```bash
 git clone git@github.com:cloud-itonami/app-air-cargo.git
 cd app-air-cargo
-npx --yes nbb scripts/verify-docs-claims.cljs .        # <dir> は先頭に置く
+npx --yes kbb --backend sci scripts/verify-docs-claims.cljk .        # <dir> は先頭に置く
 ```
 
 実際の出力（末尾）:
@@ -108,7 +108,7 @@ cat > /tmp/run.cljs <<'EOF'
 (require '[cljs.test :refer [run-tests]] 'air-cargo.route-test)
 (run-tests 'air-cargo.route-test)
 EOF
-npx --yes nbb --classpath "$CP" /tmp/run.cljs
+npx --yes kbb --backend sci --classpath "$CP" /tmp/run.cljs
 ```
 
 実際の出力:
@@ -132,7 +132,7 @@ git clone https://github.com/kotoba-lang/html /tmp/kl-html
 git -C /tmp/kl-html checkout aa57f2730c87b7c2752151ed1a5f2e402c2ac71e   # DDS の deps.edn の pin
 git clone https://github.com/kotoba-lang/css  /tmp/kl-css
 git -C /tmp/kl-css  checkout 6eda5ee28ec177b9e09fdbee92c55a050b18cf7d   # 同上
-npx --yes nbb --classpath "src:test:/tmp/dds-pin/src:/tmp/kl-html/src:/tmp/kl-css/src" /tmp/run.cljs
+npx --yes kbb --backend sci --classpath "src:test:/tmp/dds-pin/src:/tmp/kl-html/src:/tmp/kl-css/src" /tmp/run.cljs
 ```
 
 ### テストが判別することを確かめる（落ちない検査は劇場）
@@ -141,17 +141,17 @@ npx --yes nbb --classpath "src:test:/tmp/dds-pin/src:/tmp/kl-html/src:/tmp/kl-cs
 cp src/air_cargo/route.cljc /tmp/route.bak
 # M1 — 多段パス /xrpc/a/b を 400 にする（＝移行の衣を着た方針変更）
 perl -0pi -e 's/\(when \(seq rest.\) rest.\)\)\)\)/(when (and (seq rest\x27) (not (clojure.string\/includes? rest\x27 "\/"))) rest\x27))))/' src/air_cargo/route.cljc
-npx --yes nbb --classpath "$CP" /tmp/run.cljs     # → 1 failures （FAIL in (dispatch-xrpc)）
+npx --yes kbb --backend sci --classpath "$CP" /tmp/run.cljs     # → 1 failures （FAIL in (dispatch-xrpc)）
 cp /tmp/route.bak src/air_cargo/route.cljc
 
 cp src/air_cargo/view.cljc /tmp/view.bak
 # M2 — ページが route 表を無視して固定値を描く（ADR-0001 が記録した欠陥そのもの）
 perl -0pi -e 's/:rows \(route-rows routes\)/:rows (route-rows [{:route\/path "\/" :route\/method :get :route\/doc "焼いた値"}])/' src/air_cargo/view.cljc
-npx --yes nbb --classpath "$CP" /tmp/run.cljs     # → 4 failures
+npx --yes kbb --backend sci --classpath "$CP" /tmp/run.cljs     # → 4 failures
                                                   #   FAIL in (page-shows-the-real-data) ×2
                                                   #   FAIL in (page-shows-what-it-is-given-not-a-baked-table) ×2
 cp /tmp/view.bak src/air_cargo/view.cljc
-npx --yes nbb --classpath "$CP" /tmp/run.cljs     # → 0 failures
+npx --yes kbb --backend sci --classpath "$CP" /tmp/run.cljs     # → 0 failures
 ```
 
 **外した mutation も記録しておく。** 「ページが env の値を出す」ように view を
@@ -177,9 +177,9 @@ cat > /tmp/render.cljs <<'EOF'
                   :actor route/actor-did}))
   (println "ok"))
 EOF
-DDS=/tmp/dds-pin npx --yes nbb --classpath "$CP" /tmp/render.cljs
+DDS=/tmp/dds-pin npx --yes kbb --backend sci --classpath "$CP" /tmp/render.cljs
 
-cd $K/design-quality && npx --yes nbb -m design-quality.cli score /tmp/ac-page.html --min 95
+cd $K/design-quality && npx --yes kbb --backend sci -m design-quality.cli score /tmp/ac-page.html --min 95
 ```
 
 実際の出力（末尾）:
@@ -221,7 +221,7 @@ s=s.replace('safe-area-inset','SAFEAREAREMOVED')
 s=s.replace('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">','')
 open('/tmp/ac-page-broken.html','w',encoding='utf-8').write(s)
 EOF
-cd $K/design-quality && npx --yes nbb -m design-quality.cli score /tmp/ac-page-broken.html --min 95
+cd $K/design-quality && npx --yes kbb --backend sci -m design-quality.cli score /tmp/ac-page-broken.html --min 95
 ```
 
 ```
@@ -241,7 +241,7 @@ resource governor）。直接叩かず、必ず guard 経由で:
 ```bash
 cd "$REPO"
 node ~/github/com-junkawasaki/scripts/resource-guard.mjs run build -- \
-  npx --yes shadow-cljs release worker
+  npx --yes amu compile --target wasm32-browser worker
 ```
 
 lock を他セッションが持っていると **exit 2 で拒否される。これはエラーではなく
@@ -255,7 +255,7 @@ lock を他セッションが持っていると **exit 2 で拒否される。�
 
 ```
 $ node ~/github/com-junkawasaki/scripts/resource-guard.mjs run build -- \
-    npx --yes shadow-cljs release worker
+    npx --yes amu compile --target wasm32-browser worker
 ...
 [:worker] Compiling ...
 [:worker] Build completed. (55 files, 12 compiled, 0 warnings, 16.60s)
@@ -278,7 +278,7 @@ shadow は未宣言 / 改名された var を **warning** として扱い、`rel
 
 ```
 $ # B1: worker.cljs が未宣言の var route/dispatchh を呼ぶ。:warnings-as-errors は ON
-$ npx --yes shadow-cljs release worker
+$ npx --yes amu compile --target wasm32-browser worker
 rc=1                       ← ビルドが落ちる
    cljs.analyzer/analyze (analyzer.cljc:4364)
    ...
@@ -288,7 +288,7 @@ rc=1                       ← ビルドが落ちる
 $ # B2: 同じ壊れたソース。:warnings-as-errors を :build-options へ移すだけ
 $ grep -c 'warnings-as-errors true' shadow-cljs.edn
 1                          ← 文字列はファイルに在る
-$ npx --yes shadow-cljs release worker
+$ npx --yes amu compile --target wasm32-browser worker
 rc=0                       ← ビルドが通る。壊れた bundle が書き出される
 ```
 
@@ -308,7 +308,7 @@ FAILED	2 claim(s): warnings-are-errors, warnings-as-errors-not-misplaced
 ここが deploy されるものに触る唯一の検査である。
 
 ```bash
-cd "$REPO" && npx --yes nbb scripts/smoke-worker.cljs dist/worker.js
+cd "$REPO" && npx --yes kbb --backend sci scripts/smoke-worker.cljk dist/worker.js
 ```
 
 実際の出力:
@@ -365,8 +365,8 @@ Refusing to report a pass: build it first (see docs/operator-quickstart.md S4).
 
 ```
 $ # B3: worker がページに env の VALUE を渡す（(keys e) → (vals e)）
-$ npx --yes shadow-cljs release worker      # rc=0 — 漏洩はコンパイルエラーではない
-$ npx --yes nbb scripts/smoke-worker.cljs dist/worker.js
+$ npx --yes amu compile --target wasm32-browser worker      # rc=0 — 漏洩はコンパイルエラーではない
+$ npx --yes kbb --backend sci scripts/smoke-worker.cljk dist/worker.js
 FAIL	page shows the KEY of the sentinel var	expected=true	actual=false
 FAIL	page hides the VALUE of that same var	expected=false	actual=true
 FAIL	page enumerates env keys it was handed	expected=true	actual=false
@@ -375,8 +375,8 @@ FAILED	3 check(s): page shows the KEY of the sentinel var, page hides the VALUE 
 smoke rc=1
 
 $ # 復元して再ビルド
-$ npx --yes shadow-cljs release worker      # rc=0
-$ npx --yes nbb scripts/smoke-worker.cljs dist/worker.js
+$ npx --yes amu compile --target wasm32-browser worker      # rc=0
+$ npx --yes kbb --backend sci scripts/smoke-worker.cljk dist/worker.js
 CHECKED	33
 OK	the built bundle answers as the route table says
 smoke rc=0
@@ -597,5 +597,5 @@ dig +short etzhayyim.com A       # → 172.67.179.128, 104.21.51.111
   §6c の scratch tree に `tsc --noEmit` を当てると `TS2307: Cannot find module
   '@etzhayyim/sdk'` が出るが、**それは私の差し替えがモジュールを欠いているので
   あって、この repo の欠陥ではない。** 欠陥として引用しないこと。
-- **JVM 側のテストランナー**（`clojure -X:test`）。テストは nbb で走らせた。
+- **JVM 側のテストランナー**（`kbb -X:test`）。テストは nbb で走らせた。
   `deps.edn` に `:test` alias は用意してあるが、この walk では踏んでいない。
