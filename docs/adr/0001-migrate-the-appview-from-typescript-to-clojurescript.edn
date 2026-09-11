@@ -66,7 +66,7 @@ ADR-2606290000 の判断で、kotoba の ingress capability が :native-aot /
 ### ビルドが緑であることは検査ではない
 
 shadow は未宣言 / 改名された var を **warning** として扱い、
-`shadow-cljs release worker` は exit 0 のまま初回リクエストで throw する bundle を
+`amu compile --target wasm32-browser worker` は exit 0 のまま初回リクエストで throw する bundle を
 書き出す。したがって『ビルドが通った』は落ちようのない検査である。
 shadow-cljs.edn の :compiler-options に :warnings-as-errors true を入れた。
 
@@ -149,7 +149,7 @@ docs/operator-quickstart.md に各コマンドとその実出力がある。
   classpath と、deps.edn が pin した sha の抽出の**両方**で実行し、結果は同一。
 - **ページ描画 → design-quality score 100.00**、gate PASS (exit 0)。
 - **scripts/verify-docs-claims.cljs**: 31 claim すべて PASS、exit 0。
-- **shadow-cljs release worker** が :warnings-as-errors 有効のまま完走
+- **amu compile --target wasm32-browser worker** が :warnings-as-errors 有効のまま完走
   (55 files, 12 compiled, 0 warnings, 16.60s、dist/worker.js 254,613 バイト)。
 - **scripts/smoke-worker.cljs** がその bundle を import して叩き、33 項目すべて PASS。
 - **workerd (wrangler dev --local)** で compatibility_flags 無しのまま全 route が
