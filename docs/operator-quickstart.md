@@ -235,7 +235,7 @@ exit **1**（PASS のときは 0）。
 
 ## §4 bundle をビルドする
 
-**高負荷ビルドは同時 1 本に制限されている**（superproject `CLAUDE.md` の
+**高負荷ビルドは同時 1 本に制限されている**（superproject `AGENTS.md` の
 resource governor）。直接叩かず、必ず guard 経由で:
 
 ```bash
