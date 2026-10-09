@@ -49,16 +49,17 @@ route は rest parameter `[...path]` で受けており、`a/b` をそのまま 
 転送していた。空だけが 400（`Missing XRPC method`、文言も当時のまま）。ここを
 1 セグメントに絞るのは移行ではなく方針変更なので、この commit には入れていない。
 
-## いま在るもの — 25 ファイル
+## いま在るもの — 28 ファイル
 
 | 面 | ファイル |
 |---|---|
 | 判断・描画・edge | `src/air_cargo/{route.cljc, view.cljc, worker.cljs}` |
-| テスト | `test/air_cargo/route_test.cljc`（7 tests / 49 assertions） |
+| テスト | `test/air_cargo/route_test.cljc`（9 tests / 78 assertions） |
 | ビルド | `deps.edn` / `shadow-cljs.edn` / `.gitignore` |
 | Worker 設定 | `wrangler.jsonc` |
 | actor 記述子 | `kotodama.jsonld` |
 | 検証 | `scripts/{smoke-worker.cljs, verify-docs-claims.cljs}` |
+| 静的版の描画 | `scripts/render-static.kotoba` |
 | ドメインライブラリ（appview ではない） | `kotoba/`（7 ファイル・TypeScript。下記） |
 | 由来・権利・識別 | `NOTICE` / `README.edn` / `migration.edn` / `MIGRATION-TODO.md` |
 | 文書 | `README.md` / `docs/operator-quickstart.md` / `docs/adr/0001-*.edn` |
@@ -175,6 +176,34 @@ deploy 先も中継先も、いま存在しない。`/xrpc/` は到達できな�
 `--color-primitive-blue`（**dds.css の中だけに在るトークン**、CSS 抜きページでの
 出現回数 0）を別々に見る。採点が落ちることも確かめてある（safe-area と viewport
 を壊すと 74.16 で FAIL、exit 1）。
+
+## Static edition (IPFS)
+
+Published name: `ipns://k51qzi5uqu5dk8snhs7fivu3booa2db2en5e2e3pjpfpwjvw33brwhjg96d188` (recorded with the site CID in `kotoba.app.edn`). Public HTTPS entrance: `https://k51qzi5uqu5dk8snhs7fivu3booa2db2en5e2e3pjpfpwjvw33brwhjg96d188.ipns.220-146-170-114.sslip.io/`.
+
+Worker とは別に、説明ページの**静的版**を描ける。IPFS に content-addressed で
+置く版で、正準のアドレスは `ipns://` の名前（`{k51…}.ipns` の gateway origin
+でも読める）、DNS 名はその別名にすぎない。Worker 版は並行して deploy された
+ままで、この版のための変更はその出力を 1 バイトも変えない（`:static?` が
+無ければ従来どおり描く）。
+
+静的版には Worker が居ないので、`/health` も `/xrpc/:nsid` も中継先も env の
+キーも**出さない**。route 表は `:route/kind :page` のものだけを描き、
+「XRPC の中継は Worker 版にしか無い」と書く。宣言された XRPC メソッドは出す
+—— Worker が var として受け取る `APP_CAPABILITIES` を、ビルド時に
+`wrangler.jsonc` から読む（手で写さない。読めなければ exit 2 で何も書かない）。
+テスト（`static-edition-advertises-only-what-exists`）が、同じ opts を渡した
+うえで静的版に出ないこと・Worker 版に出ることを対で検査する。
+
+```bash
+K=~/github/com-junkawasaki/orgs/kotoba-lang
+DDS=$K/jp-go-digital-design-system \
+  kbb --backend sci --classpath "src:$K/jp-go-digital-design-system/src:$K/html/src:$K/css/src" \
+  scripts/render-static.kotoba          # → dist/static/index.html（git 管理外）
+```
+
+出力は決定論的である（時刻も env も読まない）。2 回描いて sha256 が一致する
+ことを確かめてから publish する。
 
 ## 検証
 
