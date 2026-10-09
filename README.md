@@ -49,7 +49,7 @@ route は rest parameter `[...path]` で受けており、`a/b` をそのまま 
 転送していた。空だけが 400（`Missing XRPC method`、文言も当時のまま）。ここを
 1 セグメントに絞るのは移行ではなく方針変更なので、この commit には入れていない。
 
-## いま在るもの — 27 ファイル
+## いま在るもの — 28 ファイル
 
 | 面 | ファイル |
 |---|---|
@@ -178,6 +178,8 @@ deploy 先も中継先も、いま存在しない。`/xrpc/` は到達できな�
 を壊すと 74.16 で FAIL、exit 1）。
 
 ## Static edition (IPFS)
+
+Published name: `ipns://k51qzi5uqu5dk8snhs7fivu3booa2db2en5e2e3pjpfpwjvw33brwhjg96d188` (recorded with the site CID in `kotoba.app.edn`). Public HTTPS entrance: `https://k51qzi5uqu5dk8snhs7fivu3booa2db2en5e2e3pjpfpwjvw33brwhjg96d188.ipns.220-146-170-114.sslip.io/`.
 
 Worker とは別に、説明ページの**静的版**を描ける。IPFS に content-addressed で
 置く版で、正準のアドレスは `ipns://` の名前（`{k51…}.ipns` の gateway origin

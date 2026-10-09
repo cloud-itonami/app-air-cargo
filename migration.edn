@@ -20,7 +20,7 @@
                       "src/air_cargo/worker.cljs" "test/air_cargo/route_test.cljc"
                       ;; Added for the static (IPFS) edition of the page; README
                       ;; "Static edition (IPFS)".
-                      "scripts/render-static.kotoba"]
+                      "scripts/render-static.kotoba" "kotoba.app.edn"]
 
   ;; Upstream files the migration REMOVED: the deployed SvelteKit appview, the
   ;; edge dispatcher that no config referenced, and the root package.json whose
