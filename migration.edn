@@ -17,7 +17,10 @@
                       "docs/adr/0001-migrate-the-appview-from-typescript-to-clojurescript.edn"
                       "scripts/smoke-worker.cljs" "scripts/verify-docs-claims.cljs"
                       "src/air_cargo/route.cljc" "src/air_cargo/view.cljc"
-                      "src/air_cargo/worker.cljs" "test/air_cargo/route_test.cljc"]
+                      "src/air_cargo/worker.cljs" "test/air_cargo/route_test.cljc"
+                      ;; Added for the static (IPFS) edition of the page; README
+                      ;; "Static edition (IPFS)".
+                      "scripts/render-static.kotoba"]
 
   ;; Upstream files the migration REMOVED: the deployed SvelteKit appview, the
   ;; edge dispatcher that no config referenced, and the root package.json whose

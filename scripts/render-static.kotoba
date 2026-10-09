@@ -1,0 +1,77 @@
+#!/usr/bin/env kbb
+;; render-static — renders the page's static edition into dist/static/index.html.
+;;
+;; The static edition is published content-addressed on IPFS and has no Worker
+;; behind it (the ipns:// name is the canonical address; DNS names are aliases).
+;; The Worker edition stays deployed in parallel and this script does not touch it.
+;;
+;; The output must be deterministic -- if the same tree does not give the same
+;; CID there is no point in addressing it by content. So this reads no clock, no
+;; host, no env: only the tree (src/, wrangler.jsonc) and the DADS CSS.
+;;
+;; Usage:  DDS=<jp-go-digital-design-system> \
+;;         kbb --backend sci --classpath "src:$DDS/src:$K/html/src:$K/css/src" \
+;;           scripts/render-static.kotoba [<out>]          (default dist/static/index.html)
+;; Exit:   0 written · 2 could not render (no CSS, unreadable wrangler.jsonc, ...;
+;;         nothing half-written is left as if it were the edition)
+
+(require '["node:fs" :as fs] '["node:path" :as path]
+         '[nbb.core :refer [load-file await]]
+         '[kotoba.lang.text :as str])
+
+;; src/ is `.kotoba`, but kbb's sci door (org-babashka-nbb) resolves namespaces
+;; only as `.cljk` / `.cljs` / `.cljc` (measured: `require` dies with
+;; `Could not find namespace`). Loading in dependency order lets the `require`
+;; below find namespaces that are already loaded.
+(await (load-file "src/air_cargo/route.kotoba"))
+(await (load-file "src/air_cargo/view.kotoba"))
+(require '[air-cargo.route :as route] '[air-cargo.view :as view])
+
+(defn- undetermined! [m]
+  (println (str "UNDETERMINED\t" m))
+  (js/process.exit 2))
+
+(def out
+  (or (first (remove #(str/starts-with? % "--") *command-line-args*))
+      "dist/static/index.html"))
+
+(def css-path
+  "The same resource the Worker bakes in with `shadow.resource/inline`
+  (jp_go_dds/dds.css). A static edition with its own CSS would drift from the
+  Worker's look without anyone deciding it should."
+  (str (or (.-DDS js/process.env)
+           (str (.-HOME js/process.env)
+                "/github/com-junkawasaki/orgs/kotoba-lang/jp-go-digital-design-system"))
+       "/resources/jp_go_dds/dds.css"))
+
+(def methods
+  "APP_CAPABILITIES, read from wrangler.jsonc at build time -- the same
+  declaration the Worker receives as a var, NOT a hand-copied list (a copy is how
+  the pre-migration page came to say `routes: []` beside a config declaring two).
+  Shaped by `route/capability-nsids`, the function the Worker's decode uses.
+
+  Unlike the Worker, an unreadable declaration is not rendered as `none`: the
+  Worker degrades to keep the rest of a live page useful, but a build that
+  silently published an empty table would be a wrong edition with a valid CID."
+  (let [raw (try (.readFileSync fs "wrangler.jsonc" "utf8")
+                 (catch :default e (undetermined! (str "wrangler.jsonc unreadable: " (.-message e)))))
+        j (try (.parse js/JSON (str/replace raw #"(?m)^\s*//.*$" ""))
+               (catch :default e (undetermined! (str "wrangler.jsonc is not JSON once comments are stripped: " (.-message e)))))
+        caps (some-> j .-vars .-APP_CAPABILITIES)
+        v (try (js->clj (.parse js/JSON caps))
+               (catch :default e (undetermined! (str "vars.APP_CAPABILITIES is not a JSON array: " (pr-str caps)))))]
+    (when-not (and (sequential? v) (seq v))
+      (undetermined! (str "vars.APP_CAPABILITIES declares nothing: " (pr-str caps))))
+    (route/capability-nsids v)))
+
+(when-not (.existsSync fs css-path)
+  (undetermined! (str "no DADS CSS at " css-path " (set DDS)")))
+
+(let [html (view/render {:css (.readFileSync fs css-path "utf8")
+                         :routes route/routes
+                         :methods methods
+                         :actor route/actor-did
+                         :static? true})]
+  (.mkdirSync fs (.dirname path out) #js {:recursive true})
+  (.writeFileSync fs out html)
+  (println (str "WROTE\t" out "\t" (.-length html) " chars\t" (count methods) " methods")))
